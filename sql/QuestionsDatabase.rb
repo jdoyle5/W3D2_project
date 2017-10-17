@@ -11,12 +11,16 @@ class QuestionsDBConnection < SQLite3::Database
   end
 end
 
+
+
+
+
 class User
   attr_accessor :fname, :lname
 
   def self.all
-    data = QuestionsDBConnection.instance.execute("SELECT * FROM questions")
-    data.map { |datum| Questions.new(datum) }
+    data = QuestionsDBConnection.instance.execute("SELECT * FROM users")
+    data.map { |datum| User.new(datum) }
   end
 
   def self.find_by_name(fname, lname)
@@ -47,6 +51,14 @@ class User
     User.new(user.first)
   end
 
+  def authored_questions
+    Question.find_by_author_id(@id)
+  end
+
+  def authored_replies
+    Reply.find_by_author_id(@id)
+  end
+
   def initialize(options)
     @id = options['id']
     @fname = options['fname']
@@ -75,6 +87,13 @@ class User
         id = ?
     SQL
   end
+
+
+  def followed_questions_for_user_id
+    Question_Follows.followed_questions_for_user_id(@id)
+  end
+
+
 end
 
 
@@ -106,6 +125,14 @@ class Question
     Question.new(question.first)
   end
 
+  def author
+    User.find_by_id(@author_id)
+  end
+
+  def replies
+    Reply.find_by_question_id(@id)
+  end
+
   def initialize(options)
     @id = options['id']
     @title = options['title']
@@ -135,6 +162,13 @@ class Question
         id = ?
     SQL
   end
+
+  def followers
+    Question_Follows.followers_for_question_id(@id)
+  end
+
+
+
 end
 
 
@@ -147,7 +181,7 @@ class Reply
 
   def self.all
     data = QuestionsDBConnection.instance.execute("SELECT * FROM replies")
-    data.map { |datum| Questions.new(datum) }
+    data.map { |datum| Reply.new(datum) }
   end
 
   def self.find_by_author_id(author_id)
@@ -161,7 +195,7 @@ class Reply
     SQL
     return nil unless reply.length > 0
 
-    Questions.new(reply.first)
+    Reply.new(reply.first)
   end
 
   def self.find_by_question_id(question_id)
@@ -175,7 +209,47 @@ class Reply
     SQL
     return nil unless reply.length > 0
 
-    Questions.new(reply.first)
+    Reply.new(reply.first)
+  end
+
+  def self.find_by_id(id)
+    reply = QuestionsDBConnection.instance.execute(<<-SQL, id)
+      SELECT
+        *
+      FROM
+        replies
+      WHERE
+        id = ?
+    SQL
+    return nil unless reply.length > 0
+
+    Reply.new(reply.first)
+  end
+
+  def author
+    User.find_by_id(@author_id)
+  end
+
+  def question
+    Question.find_by_id(@question_id)
+  end
+
+  def parent_reply
+    Reply.find_by_id(@parent_id)
+  end
+
+  def child_reply
+    reply = QuestionsDBConnection.instance.execute(<<-SQL, @id)
+
+      SELECT
+        *
+      FROM
+        replies
+      WHERE
+        parent_id = ?
+    SQL
+    return nil unless reply.length > 0
+    Reply.new(reply.first)
   end
 
   def initialize(options)
@@ -251,4 +325,74 @@ class Question_Like
         id = ?
     SQL
   end
+end
+
+
+
+
+
+
+class Question_Follows
+  attr_accessor :user_id, :question_id,
+
+  def self.all
+    data = QuestionsDBConnection.instance.execute("SELECT * FROM questions_follows")
+    data.map { |datum| Question_Follows.new(datum) }
+  end
+
+  def initialize(options)
+    @id = options['id']
+    @user_id = options['user_id']
+    @question_id = options['question_id']
+  end
+
+  def create
+    raise "#{self} already in database" if @id
+    QuestionsDBConnection.instance.execute(<<-SQL, @id, @user_id, @question_id)
+      INSERT INTO
+        replies (id, user_id, question_id)
+      VALUES
+        (?, ?, ?)
+    SQL
+    @id = QuestionsDBConnection.instance.last_insert_row_id
+  end
+
+  def update
+    raise "#{self} not in database" unless @id
+    QuestionsDBConnection.instance.execute(<<-SQL, @id, @user_id, @question_id)
+      UPDATE
+        question_likes
+      SET
+        id = ?, user_id = ?, question_id = ?
+      WHERE
+        id = ?
+    SQL
+  end
+
+  def self.followers_for_question_id(question_id)
+    question = QuestionsDBConnection.instance.execute(<<-SQL, question_id)
+      SELECT
+        user_id
+      FROM
+        questions_follows
+      WHERE
+        question_id = ?
+    SQL
+    hold = question.map { |h| h['user_id'] }
+    hold.map { |e| User.find_by_id(e) }
+  end
+
+  def self.followed_questions_for_user_id(user_id)
+    question = QuestionsDBConnection.instance.execute(<<-SQL, user_id)
+      SELECT
+        question_id
+      FROM
+        questions_follows
+      WHERE
+        user_id = ?
+    SQL
+    hold = question.map { |h| h['question_id'] }
+    hold.map { |e| Question.find_by_author_id(e) }
+  end
+
 end
