@@ -297,6 +297,21 @@ class Question_Like
     data.map { |datum| Questions.new(datum) }
   end
 
+  def self.likers_for_questions_id(question_id)
+    question = QuestionsDBConnection.instance.execute(<<-SQL, question_id)
+
+      SELECT
+        user_id
+      FROM
+        question_likes
+      WHERE
+        question = ?
+
+    SQL
+
+    questions.map {|user_id| User.find_by_id(user_id)}
+  end
+
   def initialize(options)
     @id = options['id']
     @user_id = options['user_id']
@@ -393,6 +408,20 @@ class Question_Follows
     SQL
     hold = question.map { |h| h['question_id'] }
     hold.map { |e| Question.find_by_author_id(e) }
+  end
+
+  def most_followed_questions(n)
+    follows = QuestionsDBConnection.instance.execute(<<-SQL, n)
+
+      SELECT
+        *
+      FROM
+        questions
+      GROUP BY
+        question_id
+      HAVING
+
+
   end
 
 end
